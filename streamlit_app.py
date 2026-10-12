@@ -119,7 +119,7 @@ def render_game():
 
                 if clicked:
                     if is_mole:
-                        st.session_state.score += 1
+                        st.session_state.score += 10
                         possible_positions = [position for position in range(CELL_COUNT) if position != index]
                         st.session_state.mole_index = random.choice(possible_positions)
                         st.session_state.game_message = "잡았다! 계속 잡아 보세요."
