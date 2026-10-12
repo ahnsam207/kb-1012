@@ -32,7 +32,7 @@ st.markdown(
         background: #dce9ce;
         transform: translateY(-2px);
     }
-    .st-key-mole_target [data-testid="stButton"] button {
+    .st-key-game_board [data-testid="stButton"] button[kind="primary"] {
         font-size: 5.4rem;
     }
     .st-key-game_board [data-testid="stButton"] button:disabled {
@@ -44,7 +44,7 @@ st.markdown(
             min-height: 58px;
             font-size: 1.45rem;
         }
-        .st-key-mole_target [data-testid="stButton"] button {
+        .st-key-game_board [data-testid="stButton"] button[kind="primary"] {
             font-size: 4.35rem;
         }
     }
@@ -65,6 +65,19 @@ for key, value in {
 }.items():
     if key not in st.session_state:
         st.session_state[key] = value
+
+
+def handle_hole_click(index):
+    if not st.session_state.game_active:
+        return
+
+    if index == st.session_state.mole_index:
+        st.session_state.score += 10
+        possible_positions = [position for position in range(CELL_COUNT) if position != index]
+        st.session_state.mole_index = random.choice(possible_positions)
+        st.session_state.game_message = "잡았다! 계속 잡아 보세요."
+    else:
+        st.session_state.game_message = "아깝다! 두더지를 찾아보세요."
 
 
 @st.fragment(run_every="1s")
@@ -100,31 +113,15 @@ def render_game():
                 index = row * BOARD_SIZE + column
                 is_mole = st.session_state.game_active and index == st.session_state.mole_index
                 label = "🐹" if is_mole else "🕳️"
-                if is_mole:
-                    with columns[column]:
-                        with st.container(key="mole_target"):
-                            clicked = st.button(
-                                label,
-                                key=f"hole_{index}",
-                                use_container_width=True,
-                                disabled=not st.session_state.game_active,
-                            )
-                else:
-                    clicked = columns[column].button(
-                        label,
-                        key=f"hole_{index}",
-                        use_container_width=True,
-                        disabled=not st.session_state.game_active,
-                    )
-
-                if clicked:
-                    if is_mole:
-                        st.session_state.score += 10
-                        possible_positions = [position for position in range(CELL_COUNT) if position != index]
-                        st.session_state.mole_index = random.choice(possible_positions)
-                        st.session_state.game_message = "잡았다! 계속 잡아 보세요."
-                    else:
-                        st.session_state.game_message = "아깝다! 두더지를 찾아보세요."
+                columns[column].button(
+                    label,
+                    key=f"hole_{index}",
+                    type="primary" if is_mole else "secondary",
+                    use_container_width=True,
+                    disabled=not st.session_state.game_active,
+                    on_click=handle_hole_click,
+                    args=(index,),
+                )
 
 
 render_game()
