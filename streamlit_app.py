@@ -1,151 +1,130 @@
+import random
+import time
+
 import streamlit as st
-import pandas as pd
-import math
-from pathlib import Path
 
-# Set the title and favicon that appear in the Browser's tab bar.
-st.set_page_config(
-    page_title='GDP dashboard',
-    page_icon=':earth_americas:', # This is an emoji shortcode. Could be a URL too.
-)
 
-# -----------------------------------------------------------------------------
-# Declare some useful functions.
+GAME_DURATION = 30
+BOARD_SIZE = 3
+CELL_COUNT = BOARD_SIZE * BOARD_SIZE
 
-@st.cache_data
-def get_gdp_data():
-    """Grab GDP data from a CSV file.
+st.set_page_config(page_title="두더지 잡기", page_icon="🐹", layout="centered")
 
-    This uses caching to avoid having to read the file every time. If we were
-    reading from an HTTP endpoint instead of a file, it's a good idea to set
-    a maximum age to the cache with the TTL argument: @st.cache_data(ttl='1d')
+st.markdown(
     """
-
-    # Instead of a CSV on disk, you could read from an HTTP endpoint here too.
-    DATA_FILENAME = Path(__file__).parent/'data/gdp_data.csv'
-    raw_gdp_df = pd.read_csv(DATA_FILENAME)
-
-    MIN_YEAR = 1960
-    MAX_YEAR = 2022
-
-    # The data above has columns like:
-    # - Country Name
-    # - Country Code
-    # - [Stuff I don't care about]
-    # - GDP for 1960
-    # - GDP for 1961
-    # - GDP for 1962
-    # - ...
-    # - GDP for 2022
-    #
-    # ...but I want this instead:
-    # - Country Name
-    # - Country Code
-    # - Year
-    # - GDP
-    #
-    # So let's pivot all those year-columns into two: Year and GDP
-    gdp_df = raw_gdp_df.melt(
-        ['Country Code'],
-        [str(x) for x in range(MIN_YEAR, MAX_YEAR + 1)],
-        'Year',
-        'GDP',
-    )
-
-    # Convert years from string to integers
-    gdp_df['Year'] = pd.to_numeric(gdp_df['Year'])
-
-    return gdp_df
-
-gdp_df = get_gdp_data()
-
-# -----------------------------------------------------------------------------
-# Draw the actual page
-
-# Set the title that appears at the top of the page.
-'''
-# :earth_americas: GDP dashboard
-
-Browse GDP data from the [World Bank Open Data](https://data.worldbank.org/) website. As you'll
-notice, the data only goes to 2022 right now, and datapoints for certain years are often missing.
-But it's otherwise a great (and did I mention _free_?) source of data.
-'''
-
-# Add some spacing
-''
-''
-
-min_value = gdp_df['Year'].min()
-max_value = gdp_df['Year'].max()
-
-from_year, to_year = st.slider(
-    'Which years are you interested in?',
-    min_value=min_value,
-    max_value=max_value,
-    value=[min_value, max_value])
-
-countries = gdp_df['Country Code'].unique()
-
-if not len(countries):
-    st.warning("Select at least one country")
-
-selected_countries = st.multiselect(
-    'Which countries would you like to view?',
-    countries,
-    ['DEU', 'FRA', 'GBR', 'BRA', 'MEX', 'JPN'])
-
-''
-''
-''
-
-# Filter the data
-filtered_gdp_df = gdp_df[
-    (gdp_df['Country Code'].isin(selected_countries))
-    & (gdp_df['Year'] <= to_year)
-    & (from_year <= gdp_df['Year'])
-]
-
-st.header('GDP over time', divider='gray')
-
-''
-
-st.line_chart(
-    filtered_gdp_df,
-    x='Year',
-    y='GDP',
-    color='Country Code',
+    <style>
+    .stApp {
+        background: linear-gradient(180deg, #f4f8ed 0%, #ffffff 48%);
+    }
+    .block-container {
+        max-width: 700px;
+        padding-top: 2.5rem;
+    }
+    .st-key-game_board [data-testid="stButton"] button {
+        min-height: 76px;
+        border: 1px solid #d6dfca;
+        border-radius: 8px;
+        background: #edf3e5;
+        font-size: 1.8rem;
+        transition: transform 120ms ease, background 120ms ease;
+    }
+    .st-key-game_board [data-testid="stButton"] button:hover {
+        background: #dce9ce;
+        transform: translateY(-2px);
+    }
+    .st-key-mole_target [data-testid="stButton"] button {
+        font-size: 5.4rem;
+    }
+    .st-key-game_board [data-testid="stButton"] button:disabled {
+        color: #75836a;
+        opacity: 0.72;
+    }
+    @media (max-width: 520px) {
+        .st-key-game_board [data-testid="stButton"] button {
+            min-height: 58px;
+            font-size: 1.45rem;
+        }
+        .st-key-mole_target [data-testid="stButton"] button {
+            font-size: 4.35rem;
+        }
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
 )
 
-''
-''
+st.title("두더지 잡기")
+st.caption("30초 동안 나타나는 두더지를 빠르게 눌러 보세요.")
+
+for key, value in {
+    "game_active": False,
+    "score": 0,
+    "mole_index": None,
+    "deadline": 0.0,
+    "game_message": "시작 버튼을 누르면 게임이 시작됩니다.",
+}.items():
+    if key not in st.session_state:
+        st.session_state[key] = value
 
 
-first_year = gdp_df[gdp_df['Year'] == from_year]
-last_year = gdp_df[gdp_df['Year'] == to_year]
+@st.fragment(run_every="1s")
+def render_game():
+    remaining = max(0, int(st.session_state.deadline - time.monotonic() + 0.999))
+    if st.session_state.game_active and remaining == 0:
+        st.session_state.game_active = False
+        st.session_state.mole_index = None
+        st.session_state.game_message = f"시간 종료! 최종 점수는 {st.session_state.score}점입니다."
 
-st.header(f'GDP in {to_year}', divider='gray')
+    score_col, time_col = st.columns(2)
+    score_col.metric("점수", st.session_state.score)
+    time_col.metric("남은 시간", f"{remaining if st.session_state.game_active else 0}초")
 
-''
+    if st.session_state.game_active:
+        st.progress(remaining / GAME_DURATION)
 
-cols = st.columns(4)
+    st.markdown(f"**{st.session_state.game_message}**")
 
-for i, country in enumerate(selected_countries):
-    col = cols[i % len(cols)]
+    if not st.session_state.game_active:
+        button_label = "다시 시작" if st.session_state.score else "게임 시작"
+        if st.button(button_label, type="primary", use_container_width=True):
+            st.session_state.score = 0
+            st.session_state.game_active = True
+            st.session_state.deadline = time.monotonic() + GAME_DURATION
+            st.session_state.mole_index = random.randrange(CELL_COUNT)
+            st.session_state.game_message = "두더지를 잡아 보세요!"
 
-    with col:
-        first_gdp = first_year[first_year['Country Code'] == country]['GDP'].iat[0] / 1000000000
-        last_gdp = last_year[last_year['Country Code'] == country]['GDP'].iat[0] / 1000000000
+    with st.container(key="game_board"):
+        for row in range(BOARD_SIZE):
+            columns = st.columns(BOARD_SIZE, gap="small")
+            for column in range(BOARD_SIZE):
+                index = row * BOARD_SIZE + column
+                is_mole = st.session_state.game_active and index == st.session_state.mole_index
+                label = "🐹" if is_mole else "🕳️"
+                if is_mole:
+                    with columns[column]:
+                        with st.container(key="mole_target"):
+                            clicked = st.button(
+                                label,
+                                key=f"hole_{index}",
+                                use_container_width=True,
+                                disabled=not st.session_state.game_active,
+                            )
+                else:
+                    clicked = columns[column].button(
+                        label,
+                        key=f"hole_{index}",
+                        use_container_width=True,
+                        disabled=not st.session_state.game_active,
+                    )
 
-        if math.isnan(first_gdp):
-            growth = 'n/a'
-            delta_color = 'off'
-        else:
-            growth = f'{last_gdp / first_gdp:,.2f}x'
-            delta_color = 'normal'
+                if clicked:
+                    if is_mole:
+                        st.session_state.score += 1
+                        possible_positions = [position for position in range(CELL_COUNT) if position != index]
+                        st.session_state.mole_index = random.choice(possible_positions)
+                        st.session_state.game_message = "잡았다! 계속 잡아 보세요."
+                    else:
+                        st.session_state.game_message = "아깝다! 두더지를 찾아보세요."
 
-        st.metric(
-            label=f'{country} GDP',
-            value=f'{last_gdp:,.0f}B',
-            delta=growth,
-            delta_color=delta_color
-        )
+
+render_game()
