@@ -1,127 +1,232 @@
+import base64
 import random
 import time
+from pathlib import Path
 
 import streamlit as st
 
 
-GAME_DURATION = 30
 BOARD_SIZE = 3
-CELL_COUNT = BOARD_SIZE * BOARD_SIZE
+HOLE_COUNT = BOARD_SIZE * BOARD_SIZE
+MOLE_LIFETIME_SECONDS = 1.5
+MOLE_LIFETIME_DECREMENT_SECONDS = 0.1
+MIN_MOLE_LIFETIME_SECONDS = 0.1
+GAME_DURATION_SECONDS = 60
+HOLE_IMAGE = base64.b64encode(
+    Path(__file__).with_name("hole.png").read_bytes()
+).decode("ascii")
+MOLE_IMAGE = base64.b64encode(
+    Path(__file__).with_name("img.png").read_bytes()
+).decode("ascii")
 
-st.set_page_config(page_title="두더지 잡기", page_icon="🐹", layout="centered")
+st.set_page_config(page_title="두더지 잡기 게임", page_icon="🐹", layout="wide")
+st.title("두더지 잡기 게임")
 
+
+def show_next_mole(previous_position: int | None = None) -> None:
+    choices = [
+        position
+        for position in range(HOLE_COUNT)
+        if position != previous_position
+    ]
+    st.session_state.mole_position = random.choice(choices)
+    st.session_state.mole_id += 1
+    st.session_state.mole_started_at = time.monotonic()
+
+
+def reset_game_state() -> None:
+    st.session_state.game_status = "ready"
+    st.session_state.score = 0
+    st.session_state.lives = 3
+    st.session_state.mole_lifetime_seconds = MOLE_LIFETIME_SECONDS
+    st.session_state.game_started_at = None
+    st.session_state.mole_position = None
+    st.session_state.mole_started_at = None
+    st.session_state.mole_id = 0
+    st.session_state.resolved_mole_ids = set()
+    st.session_state.message = ""
+
+
+def start_game() -> None:
+    if st.session_state.game_status != "ready":
+        return
+    st.session_state.game_status = "playing"
+    st.session_state.game_started_at = time.monotonic()
+    show_next_mole()
+
+
+def finish_game() -> None:
+    if st.session_state.game_status == "playing":
+        st.session_state.game_status = "over"
+        st.session_state.mole_position = None
+        st.session_state.message = "게임 오버!"
+
+
+def resolve_mole(mole_id: int, caught: bool) -> None:
+    if (
+        st.session_state.game_status != "playing"
+        or mole_id != st.session_state.mole_id
+        or mole_id in st.session_state.resolved_mole_ids
+    ):
+        return
+
+    st.session_state.resolved_mole_ids.add(mole_id)
+    old_position = st.session_state.mole_position
+    if caught:
+        st.session_state.score += 10
+        st.session_state.mole_lifetime_seconds = max(
+            MIN_MOLE_LIFETIME_SECONDS,
+            round(
+                st.session_state.mole_lifetime_seconds
+                - MOLE_LIFETIME_DECREMENT_SECONDS,
+                1,
+            ),
+        )
+        st.session_state.message = "두더지를 잡았습니다! +10점"
+    else:
+        st.session_state.lives = max(0, st.session_state.lives - 1)
+        st.session_state.message = "두더지를 놓쳤어요!"
+
+    if st.session_state.lives > 0:
+        show_next_mole(old_position)
+    else:
+        finish_game()
+
+
+def handle_hole_click(hole_index: int, mole_id: int) -> None:
+    if st.session_state.game_status != "playing":
+        return
+
+    if time.monotonic() - st.session_state.game_started_at >= GAME_DURATION_SECONDS:
+        finish_game()
+        return
+
+    if (
+        mole_id != st.session_state.mole_id
+        or mole_id in st.session_state.resolved_mole_ids
+    ):
+        return
+
+    elapsed = time.monotonic() - st.session_state.mole_started_at
+    if elapsed >= st.session_state.mole_lifetime_seconds:
+        resolve_mole(mole_id, caught=False)
+    elif hole_index == st.session_state.mole_position:
+        resolve_mole(mole_id, caught=True)
+
+
+def initialize_game_state() -> None:
+    if "game_status" not in st.session_state:
+        reset_game_state()
+
+
+initialize_game_state()
+
+button_selectors = [
+    f".st-key-hole_{hole_index} [data-testid='stButton'] button"
+    for hole_index in range(HOLE_COUNT)
+]
 st.markdown(
-    """
+    f"""
     <style>
-    .stApp {
-        background: linear-gradient(180deg, #f4f8ed 0%, #ffffff 48%);
-    }
-    .block-container {
-        max-width: 700px;
-        padding-top: 2.5rem;
-    }
-    .st-key-game_board [data-testid="stButton"] button {
-        min-height: 76px;
-        border: 1px solid #d6dfca;
-        border-radius: 8px;
-        background: #edf3e5;
-        font-size: 1.8rem;
-        transition: transform 120ms ease, background 120ms ease;
-    }
-    .st-key-game_board [data-testid="stButton"] button:hover {
-        background: #dce9ce;
-        transform: translateY(-2px);
-    }
-    .st-key-game_board [data-testid="stButton"] button[kind="primary"] {
-        font-size: 5.4rem;
-    }
-    .st-key-game_board [data-testid="stButton"] button:disabled {
-        color: #75836a;
-        opacity: 0.72;
-    }
-    @media (max-width: 520px) {
-        .st-key-game_board [data-testid="stButton"] button {
-            min-height: 58px;
-            font-size: 1.45rem;
-        }
-        .st-key-game_board [data-testid="stButton"] button[kind="primary"] {
-            font-size: 4.35rem;
-        }
-    }
+    {", ".join(button_selectors)} {{
+        min-height: 160px;
+        background-color: transparent;
+        background-position: center;
+        background-repeat: no-repeat;
+        background-size: contain;
+    }}
+    {", ".join(f"{selector}[kind='secondary']" for selector in button_selectors)} {{
+        background-image: url("data:image/png;base64,{HOLE_IMAGE}");
+    }}
+    {", ".join(f"{selector}[kind='primary']" for selector in button_selectors)} {{
+        background-image: url("data:image/png;base64,{MOLE_IMAGE}");
+    }}
+    {", ".join(f"{selector} p" for selector in button_selectors)} {{
+        opacity: 0;
+    }}
     </style>
     """,
     unsafe_allow_html=True,
 )
 
-st.title("두더지 잡기")
-st.caption("30초 동안 나타나는 두더지를 빠르게 눌러 보세요.")
 
-for key, value in {
-    "game_active": False,
-    "score": 0,
-    "mole_index": None,
-    "deadline": 0.0,
-    "game_message": "시작 버튼을 누르면 게임이 시작됩니다.",
-}.items():
-    if key not in st.session_state:
-        st.session_state[key] = value
-
-
-def handle_hole_click(index):
-    if not st.session_state.game_active:
+def update_game_state() -> None:
+    if st.session_state.game_status != "playing":
         return
 
-    if index == st.session_state.mole_index:
-        st.session_state.score += 10
-        possible_positions = [position for position in range(CELL_COUNT) if position != index]
-        st.session_state.mole_index = random.choice(possible_positions)
-        st.session_state.game_message = "잡았다! 계속 잡아 보세요."
-    else:
-        st.session_state.game_message = "아깝다! 두더지를 찾아보세요."
+    now = time.monotonic()
+    if now - st.session_state.game_started_at >= GAME_DURATION_SECONDS:
+        finish_game()
+        return
+
+    if (
+        st.session_state.mole_id not in st.session_state.resolved_mole_ids
+        and now - st.session_state.mole_started_at
+        >= st.session_state.mole_lifetime_seconds
+    ):
+        resolve_mole(st.session_state.mole_id, caught=False)
 
 
-@st.fragment(run_every="1s")
-def render_game():
-    remaining = max(0, int(st.session_state.deadline - time.monotonic() + 0.999))
-    if st.session_state.game_active and remaining == 0:
-        st.session_state.game_active = False
-        st.session_state.mole_index = None
-        st.session_state.game_message = f"시간 종료! 최종 점수는 {st.session_state.score}점입니다."
+def render_game() -> None:
+    update_game_state()
+    instructions, board = st.columns([1, 2], gap="large")
 
-    score_col, time_col = st.columns(2)
-    score_col.metric("점수", st.session_state.score)
-    time_col.metric("남은 시간", f"{remaining if st.session_state.game_active else 0}초")
+    with instructions:
+        st.subheader("게임 안내")
+        st.write("게임판에 나타나는 두더지를 빠르게 클릭하세요.")
+        st.write(
+            f"두더지는 {st.session_state.mole_lifetime_seconds:g}초 동안 나타나며, "
+            f"제한 시간 {GAME_DURATION_SECONDS}초 안에 최대한 많이 잡아 보세요."
+        )
+        st.write("두더지를 놓치면 라이프가 줄어들고, 라이프가 모두 없어지면 게임이 끝납니다.")
 
-    if st.session_state.game_active:
-        st.progress(remaining / GAME_DURATION)
+        st.metric("현재 점수", st.session_state.score)
+        st.write(f"라이프: {st.session_state.lives}")
 
-    st.markdown(f"**{st.session_state.game_message}**")
+        if st.session_state.game_started_at is None:
+            remaining_game_seconds = GAME_DURATION_SECONDS
+        else:
+            elapsed_game = time.monotonic() - st.session_state.game_started_at
+            remaining_game_seconds = max(0, GAME_DURATION_SECONDS - int(elapsed_game))
+        st.write(f"남은 시간: {remaining_game_seconds}초")
 
-    if not st.session_state.game_active:
-        button_label = "다시 시작" if st.session_state.score else "게임 시작"
-        if st.button(button_label, type="primary", use_container_width=True):
-            st.session_state.score = 0
-            st.session_state.game_active = True
-            st.session_state.deadline = time.monotonic() + GAME_DURATION
-            st.session_state.mole_index = random.randrange(CELL_COUNT)
-            st.session_state.game_message = "두더지를 잡아 보세요!"
+        with st.container(height=104, border=False):
+            if st.session_state.game_status == "over":
+                st.error("게임 오버!")
+                st.write(f"최종 점수: {st.session_state.score}점")
+            elif st.session_state.message:
+                st.info(st.session_state.message)
 
-    with st.container(key="game_board"):
+        if st.session_state.game_status == "ready":
+            st.button("게임 시작", key="start_game", on_click=start_game)
+        elif st.session_state.game_status == "over":
+            st.button("다시 시작", key="restart_game", on_click=reset_game_state)
+
+    with board:
+        st.subheader("게임판")
         for row in range(BOARD_SIZE):
-            columns = st.columns(BOARD_SIZE, gap="small")
-            for column in range(BOARD_SIZE):
-                index = row * BOARD_SIZE + column
-                is_mole = st.session_state.game_active and index == st.session_state.mole_index
-                label = "🐹" if is_mole else "🕳️"
-                columns[column].button(
+            columns = st.columns(BOARD_SIZE)
+            for column_index, column in enumerate(columns):
+                hole_index = row * BOARD_SIZE + column_index
+                is_mole = (
+                    st.session_state.game_status == "playing"
+                    and hole_index == st.session_state.mole_position
+                )
+                label = "두더지" if is_mole else "빈 구멍"
+                column.button(
                     label,
-                    key=f"hole_{index}",
+                    key=f"hole_{hole_index}",
                     type="primary" if is_mole else "secondary",
-                    use_container_width=True,
-                    disabled=not st.session_state.game_active,
                     on_click=handle_hole_click,
-                    args=(index,),
+                    args=(hole_index, st.session_state.mole_id),
+                    disabled=st.session_state.game_status != "playing",
+                    use_container_width=True,
                 )
 
 
-render_game()
+@st.fragment(run_every=0.1)
+def game_fragment() -> None:
+    render_game()
+
+
+game_fragment()
