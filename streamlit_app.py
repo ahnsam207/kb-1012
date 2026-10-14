@@ -40,6 +40,7 @@ def reset_game_state() -> None:
     st.session_state.lives = 3
     st.session_state.mole_lifetime_seconds = MOLE_LIFETIME_SECONDS
     st.session_state.game_started_at = None
+    st.session_state.game_ended_at = None
     st.session_state.mole_position = None
     st.session_state.mole_started_at = None
     st.session_state.mole_id = 0
@@ -58,6 +59,7 @@ def start_game() -> None:
 def finish_game() -> None:
     if st.session_state.game_status == "playing":
         st.session_state.game_status = "over"
+        st.session_state.game_ended_at = time.monotonic()
         st.session_state.mole_position = None
         st.session_state.message = "게임 오버!"
 
@@ -186,7 +188,12 @@ def render_game() -> None:
         if st.session_state.game_started_at is None:
             remaining_game_seconds = GAME_DURATION_SECONDS
         else:
-            elapsed_game = time.monotonic() - st.session_state.game_started_at
+            game_time = (
+                st.session_state.game_ended_at
+                if st.session_state.game_ended_at is not None
+                else time.monotonic()
+            )
+            elapsed_game = game_time - st.session_state.game_started_at
             remaining_game_seconds = max(0, GAME_DURATION_SECONDS - int(elapsed_game))
         st.write(f"남은 시간: {remaining_game_seconds}초")
 
