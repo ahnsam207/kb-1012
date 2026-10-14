@@ -10,7 +10,7 @@ BOARD_SIZE = 3
 HOLE_COUNT = BOARD_SIZE * BOARD_SIZE
 MOLE_LIFETIME_SECONDS = 1.5
 MOLE_LIFETIME_DECREMENT_SECONDS = 0.1
-MIN_MOLE_LIFETIME_SECONDS = 0.1
+MIN_MOLE_LIFETIME_SECONDS = 0.5
 GAME_DURATION_SECONDS = 60
 HOLE_IMAGE = base64.b64encode(
     Path(__file__).with_name("hole.png").read_bytes()
@@ -180,6 +180,7 @@ def render_game() -> None:
             f"두더지는 {st.session_state.mole_lifetime_seconds:g}초 동안 나타나며, "
             f"제한 시간 {GAME_DURATION_SECONDS}초 안에 최대한 많이 잡아 보세요."
         )
+        st.write("두더지를 잡을 때마다 표시 시간이 0.1초씩 줄어들며, 최소 0.5초입니다.")
         st.write("두더지를 놓치면 라이프가 줄어들고, 라이프가 모두 없어지면 게임이 끝납니다.")
 
         st.metric("현재 점수", st.session_state.score)
